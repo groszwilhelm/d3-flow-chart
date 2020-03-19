@@ -1,6 +1,7 @@
 import { Component, Input, ElementRef, ViewEncapsulation } from '@angular/core';
 import * as d3 from 'd3';
 import { ChartData } from '../flow-chart.model';
+import { treeData } from './tree-data';
 
 @Component({
   selector: 'app-chart',
@@ -27,6 +28,7 @@ export class ChartComponent {
 class Chart {
   private config: ChartConfig;
   private selectedNode;
+  private group;
 
   constructor(hostElement: ElementRef, private chartData: ChartData) {
     this.configureChart(hostElement);
@@ -38,16 +40,16 @@ class Chart {
   }
 
   private renderChart(chartData: ChartData) {
-    console.warn(chartData);
-    const nodes = this.getTreeFromData(chartData);
-
+    const dataNodes = this.getTreeFromData(chartData);
     const { height, width, margin } = this.config;
+    if (!this.group) {
+      this.group = this.setupChartContainer(width, margin, height);
+    }
+    const groupedNodes = this.groupNodes(this.group, dataNodes);
 
-    const group = this.setupChartContainer(width, margin, height);
-    this.createLinksBetweenNodes(group, nodes);
-    const node = this.groupNodes(group, nodes);
-    this.drawNodeAs(node, 'circle');
-    this.attachTextToNodes(node);
+    this.drawNodesAs(groupedNodes as any, 'rect');
+    this.attachTextToNodes(groupedNodes as any);
+    this.createLinksBetweenNodes(this.group, dataNodes);
   }
 
   private setupChartContainer(width: number, margin: { top: number; left: number; right: number; bottom: number; }, height: number) {
@@ -68,8 +70,8 @@ class Chart {
       .text((d: any) => d.data.name);
   }
 
-  private drawNodeAs(node: D3NodeSelection, as) {
-    node.append('rect')
+  private drawNodesAs(node: D3NodeSelection, as: 'rect' | 'circle') {
+    node.append(as)
       .attr('width', 70)
       .attr('height', 70)
       .style('stroke', (d: any) => d.data.type)
@@ -79,34 +81,57 @@ class Chart {
   private groupNodes(group: D3GroupSelection, nodes: d3.HierarchyPointNode<unknown>) {
     const self = this;
 
-    return group.selectAll('.node')
-      .data(nodes.descendants())
+    let nodeGroups = group.selectAll('.node')
+      .data(nodes.descendants(), (d: any) => d.id);
+
+    nodeGroups.exit()
+      // .transition(this.config.transition)
+      .remove();
+
+    const enterNodes = nodeGroups
       .enter().append('g')
+      .attr('pointer-events', 'mouseover')
+      .attr('style', 'cursor:pointer')
+
+    nodeGroups = enterNodes.merge(nodeGroups as any)
       .attr('class', d => 'node' + (d.children ? ' node--internal' : ' node--leaf'))
       .attr('transform', d => 'translate(' + d.y + ',' + (d.x - 35) + ')')
       .on('click', d => this.nodeClickHandler(d))
-      .attr('pointer-events', 'mouseover')
-      .attr('style', 'cursor:pointer')
       .on("mouseover", function (node) {
         self.selectedNode = node;
       })
       .on("mouseout", function (node) {
         self.selectedNode = null;
       });
+
+    return nodeGroups;
   }
 
   private createLinksBetweenNodes(group: D3GroupSelection, nodes: d3.HierarchyPointNode<unknown>): void {
-    group.selectAll('.link')
+    const transition =  d3.transition().duration(400);
+    const links = group.selectAll('.link')
       .data(nodes.descendants().slice(1))
+
+    links.exit()
+      // .transition(this.config.transition)
+      .remove()
+
+    const enterLinks = links
       .enter().append('path')
       .attr("marker-start", "url(#triangle)")
       .attr('class', 'link')
-      .style('stroke', (d: any) => d.data.level)
       .attr('fill', 'none')
+
+    enterLinks.merge(links as any)
+      // .transition(transition)
+      .style('stroke', (d: any) => d.data.level)
       .attr('d', d =>
         `M ${d.y},${d.x}C${(d.y + d.parent.y) / 2}, ${d.x} ${(d.y + d.parent.y) / 2},${d.parent.x} ${d.parent.y + 70}, ${d.parent.x}`
       );
+
+    enterLinks.merge(links as any)
   }
+
 
   private getTreeFromData(data: ChartData) {
     const treemap = d3.tree().size([this.config.height, this.config.width]);
@@ -173,18 +198,15 @@ class Chart {
 
         self.selectedNode.data.name = d.name;
         self.selectedNode.data.value = d.value;
-
-        d3.selectAll('svg > *').remove();
+        self.selectedNode.data.type = 'blue';
         self.renderChart(self.chartData)
       })
     )
   }
 
   private nodeClickHandler(d) {
-    console.log(d);
     if (!d.data.children) { d.data.children = [] }
     d.data.children.push({ value: null, name: 'new', type: 'blue', level: 'blue' })
-    d3.selectAll('svg > *').remove();
     this.renderChart(this.chartData);
   }
 }
@@ -202,82 +224,3 @@ class ChartConfig {
 
   constructor(public width: number, public height: number) { }
 }
-
-const treeData = {
-  id: 1,
-  'name': 'Eve',
-  'value': 15,
-  'type': 'red',
-  'level': 'red',
-  'padding': 50,
-  'children': [
-    {
-      id: 2,
-      'name': 'Cain',
-      'value': 10,
-      'type': 'red',
-      'level': 'red',
-      // 'padding': 20
-    },
-    {
-      id: 3,
-      'name': 'Seth',
-      'value': 10,
-      'type': 'red',
-      'level': 'red',
-      // 'padding': 20,
-      'children': [
-        {
-          id: 4,
-          'name': 'Enos',
-          'value': 7.5,
-          'type': 'red',
-          'level': 'red',
-          // 'padding': 20
-        },
-        {
-          id: 5,
-          'name': 'Noam',
-          'value': 7.5,
-          'type': 'red',
-          'level': 'red',
-          // 'padding': 20
-        }
-      ]
-    },
-    {
-      id: 6,
-      'name': 'Abel',
-      'value': 10,
-      'type': 'red',
-      'level': 'red',
-      // 'padding': 20
-    },
-    {
-      id: 7,
-      'name': 'Awan',
-      'value': 10,
-      'type': 'red',
-      'level': 'red',
-      // 'padding': 20,
-      'children': [
-        {
-          id: 8,
-          'name': 'Enoch',
-          'value': 7.5,
-          'type': 'red',
-          'level': 'red',
-          // 'padding': 20
-        }
-      ]
-    },
-    {
-      id: 9,
-      'name': 'Azura',
-      'value': 10,
-      'type': 'red',
-      'level': 'red',
-      // 'padding': 20
-    }
-  ]
-};
